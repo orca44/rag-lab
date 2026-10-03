@@ -1,0 +1,111 @@
+import type {RagId} from './rag';
+
+type BuildingScenario = {
+ name:string; question:string; scale:string; stack:string; pattern:RagId;
+ companionId:string; connection:string;
+ situation:string; sources:string; evidence:string; answer:string; why:string;
+ retrieval:string[]; operations:string; failure:string; measure:string;
+};
+
+// Fictional teaching fixtures, not equipment instructions or measured results.
+export const scenarios: BuildingScenario[] = [
+ {
+  name:'Building handbook', pattern:'naive', stack:'Naive RAG',
+  companionId:'notice', connection:'Both questions start from one current handbook passage. The Playground example also contains an archived version of the same rule, so check freshness as well as similarity.',
+  question:'How does a tenant request after-hours cooling at Harbor Tower?',
+  scale:'100 buildings · 10,000 handbook sections',
+  situation:'You run a facilities help desk. An office tenant is hosting an evening event and needs the building’s approved request process.',
+  sources:'Harbor Tower tenant handbook, section 4.2, current approved version.',
+  evidence:'The fictional handbook says: “Submit the after-hours cooling form through the tenant portal at least one business day before the event.”',
+  answer:'Submit the tenant-portal form at least one business day before your event. Source: Harbor Tower handbook, §4.2. This explains the request process; it does not switch on cooling.',
+  why:'One authorized handbook passage answers the question. A single search by meaning is enough if it reliably finds that passage. A graph or a multi-step agent adds little here.',
+  retrieval:['Limit search to Harbor Tower’s current, authorized handbook','Search for the after-hours cooling request process','Give the matching passage to the model with its section reference'],
+  operations:'Tag every handbook with building ID, effective date and access permissions. Update only changed sections. Replicate the search service as question traffic grows, and invalidate cached answers when a handbook changes.',
+  failure:'Another building may have a different request process. Require the correct building and current version before answering; ask for the building if it is missing.',
+  measure:'Try known questions from each building. Check that the right handbook section is found and cited, and that missing policies produce “I do not know.”',
+ },
+ {
+  name:'Equipment fault', pattern:'hybrid', stack:'Hybrid + reranking',
+  companionId:'f17', connection:'Both start from an exact alarm code on AHU-7. The Playground tokenizer splits F-17 into fragments; it does not guarantee the exact identifier matching described in this design.',
+  question:'AHU-7 shows alarm F-17 and occupants report weak airflow. What should I check?',
+  scale:'100 buildings · 50,000 assets · 1 million manual and work-order passages',
+  situation:'A technician sees a code on an air-handling unit (AHU), while the help-desk ticket describes the same problem in everyday words.',
+  sources:'Asset register mapping Harbor Tower/AHU-7 to its exact model; matching manufacturer manual; approved inspection procedure; past work orders.',
+  evidence:'In this invented equipment manual, F-17 means an airflow-proving mismatch. A past work order describes “weak air at the outlets.” F-17 is a fictional code here, not a universal alarm definition.',
+  answer:'The matching manual describes F-17 as an airflow-proving mismatch. Follow the cited approved inspection procedure with a qualified technician. The symptom alone does not establish which component failed. Sources: fictional model manual §7; work order WO-218.',
+  why:'Keyword search preserves exact strings such as F-17 and the model number. Meaning-based search connects “weak airflow” with differently worded service notes. Merge both result lists, then rerank the most relevant passages.',
+  retrieval:['Resolve Harbor Tower/AHU-7 to its model and authorized documents','Search exact alarm F-17 + descriptions of weak airflow','Merge the matches and rerank passages for this equipment model'],
+  operations:'Use building + asset IDs because many sites have an AHU-7. Keep manual revisions and model metadata with every passage. Share approved public manuals, but isolate each customer’s work orders and access rights.',
+  failure:'The same alarm code can mean something else on a different model. If the model is unknown or evidence conflicts, request the missing asset details rather than guessing.',
+  measure:'Test alarm codes and plain-language symptoms together. Check model correctness, useful manual citations and separation of different customers’ service records.',
+ },
+ {
+  name:'Correct maintenance procedure', pattern:'rerank', stack:'Hybrid + reranking',
+  companionId:'f18', connection:'Both need the procedure for one specific fault ahead of similar ones. The Playground example uses a weighted reranking rule; this design describes a model-based reranker and explicit revision filtering.',
+  question:'Which filter-replacement procedure applies to Harbor Tower’s AHU-7?',
+  scale:'100 buildings · 250,000 current and archived procedure sections',
+  situation:'Search finds many similar maintenance documents. You need the approved procedure for this installed model and filter assembly, not a plausible procedure for a neighboring unit.',
+  sources:'AHU-7 asset record, installed assembly details, approved model-specific maintenance procedure and revision register.',
+  evidence:'Initial search returns 50 similar passages. The matching passage is buried in the list: procedure MP-42, revision 3, explicitly names the installed assembly. Archived revisions are excluded before ranking.',
+  answer:'Use MP-42 revision 3, whose applicability section matches AHU-7’s installed assembly. Source: MP-42 rev. 3, §1. The answer links to the approved procedure rather than inventing replacement steps.',
+  why:'The correct evidence is already in the search results, but generic procedures rank above it. A reranker reads the question alongside each candidate passage and moves the strongest matches up. It cannot recover a procedure the first search never found.',
+  retrieval:['Filter by building, installed model, approval and current revision','Retrieve up to 50 potentially relevant procedure passages','Rerank those passages; send the best supported matches to the model'],
+  operations:'Maintain a reliable asset-to-procedure mapping. Batch ranking requests where supported and cap candidates to control response time. Search and ranking services can scale independently.',
+  failure:'A high ranking score is not approval to use a procedure. Enforce applicability and approval metadata first; flag missing asset details or conflicting approved revisions.',
+  measure:'Check whether the correct procedure appears in the first search, then whether reranking puts it near the top. Measure the quality gain against added response time.',
+ },
+ {
+  name:'After-hours energy', pattern:'multi', stack:'Multi-query + hybrid + reranking',
+  companionId:'baseload', connection:'Both ask about overnight energy in words the documents do not use. The Playground example expands a small dictionary; this design also combines hybrid search and reranking.',
+  question:'What documented issues could explain high overnight electricity use at Harbor Tower?',
+  scale:'100 buildings · 500,000 audit and maintenance passages',
+  situation:'An energy analyst has already confirmed an overnight increase from meter data. Relevant reports may call it baseload, out-of-hours operation or a schedule override.',
+  sources:'Energy audit, occupancy schedules, approved sequence of operation and maintenance notes. Meter totals come from the historian or analytics API, not document similarity search.',
+  evidence:'Three search phrasings find an audit about “overnight baseload,” a note about “manual schedule override,” and a report about “out-of-hours plant operation.”',
+  answer:'The records suggest checking a previous schedule override and out-of-hours plant operation. Sources: audit EA-12 §3; work order WO-305. These are investigation leads, not a proven cause of the current increase; compare current schedules and measured loads next.',
+  why:'One wording may miss evidence written by different teams. Search a few focused versions of the question, combine the results and remove duplicates. If you only need last night’s kWh total, use a time-series query instead of RAG.',
+  retrieval:['Expand into overnight baseload, schedule override and out-of-hours operation','Run authorized hybrid retrieval for these 3 versions in parallel','Merge, remove duplicates and rerank evidence for Harbor Tower'],
+  operations:'Cap expansion at three searches per question. Keep high-frequency meter readings in a time-series store; index audit narratives and work orders separately. Normalize building IDs, timestamps and units when joining evidence.',
+  failure:'Related text does not prove causation. Do not claim energy savings or a faulty device from documents alone. Validate with interval data, occupancy, weather and operator review.',
+  measure:'Check whether the combined search finds more relevant audit evidence than one query. Track misleading expansions, duplicate results and extra search cost.',
+ },
+ {
+  name:'Cooling outage impact', pattern:'graph', stack:'Graph + document retrieval',
+  companionId:'commsroom', connection:'Both follow equipment dependencies: chiller to air handler to the spaces it serves. The Playground follows one outgoing hop, the graph lab supports bounded traversal, and this design proposes up to three hops.',
+  question:'If AHU-7 is unavailable, which rooms may lose their normal air supply?',
+  scale:'100 buildings · 50,000 assets · 500,000 modeled relationships',
+  situation:'A facilities manager is planning downtime. The answer depends on what the unit serves, not which room descriptions sound similar to “AHU-7.”',
+  sources:'Verified equipment-to-zone graph, zone-to-room mapping, commissioning records and building-specific outage procedure.',
+  evidence:'The fictional topology is AHU-7 → VAV-3 → East zone 3 → Rooms 301 and 302, and AHU-7 → VAV-4 → East zone 4 → Rooms 401 and 402. A VAV is a variable-air-volume terminal serving a zone. West wing rooms such as 311 are on AHU-8’s air path.',
+  answer:'Rooms 301, 302, 401 and 402, in the East wing on floors 3 and 4, are on AHU-7’s modeled downstream air path. Source: topology snapshot T-42 and zone maps Z-3 and Z-4. Verify backup arrangements and current topology before planning downtime; this identifies possible exposure, not a prediction of room temperature.',
+  why:'Graph retrieval follows explicit equipment and room connections. Document retrieval then adds the relevant operating procedure. A unit’s physical location alone does not tell you which rooms it serves.',
+  retrieval:['Resolve Harbor Tower/AHU-7 in the authorized equipment graph','Follow feeds and zone-to-room links, capped at 3 hops / 200 nodes','Retrieve supporting topology records and the applicable outage procedure'],
+  operations:'Update relationships after commissioning and retrofits. Store edge direction, provenance and verification time. Partition by customer or site where appropriate, and report truncated paths when traversal limits are reached.',
+  failure:'Missing connections or unmodeled redundancy make impact incomplete. Show graph freshness and uncertainty; do not treat “no path found” as proof that a room is unaffected.',
+  measure:'Compare retrieved rooms and paths with engineer-reviewed topology for known outages. Test that unrelated rooms are excluded and stale or incomplete paths are flagged.',
+ },
+ {
+  name:'Hot meeting room', pattern:'agentic', stack:'Bounded agent + tools + RAG',
+  companionId:'chiller', connection:'Both investigate a live cooling problem. The Playground uses fixed routing rules; this design describes how an agent could use live tools. The temperature and work-order results here are illustrative snapshots.',
+  question:'Room 301 is too hot right now. What should the facilities operator investigate?',
+  scale:'100 buildings · 500,000 monitored points · live APIs + documents',
+  situation:'The help desk receives a comfort complaint. A manual explains intended operation, but it cannot tell you the current temperature or whether a work order is already open.',
+  sources:'Read-only building management system (BMS) trends, equipment-to-room mapping, maintenance system and approved comfort-response procedure.',
+  evidence:'Fictional tool results: room temperature is 81°F at 14:05, the configured target is 73°F, and WO-812 is open for the serving VAV-3. These observations suggest a lead, not a confirmed fault.',
+  answer:'At 14:05, Room 301 was 8°F above its configured target. WO-812 already covers its serving VAV-3; review that work order and the cited comfort-response procedure. Sources: timestamped BMS response; WO-812; SOP-C2. No setpoint or equipment state was changed.',
+  why:'The next lookup depends on what is found: after identifying the room’s serving equipment, inspect its readings and relevant work orders. Use an agent only when this branching helps; a fixed workflow is simpler if the same steps always suffice.',
+  retrieval:['Read authorized room trends and serving-equipment metadata','If fresh readings confirm the complaint, check relevant work orders','Retrieve the approved procedure; stop after 3 tool calls or escalate'],
+  operations:'Put site-scoped, read-only APIs in front of the BMS, historian and maintenance system. Set timeouts, maximum data windows and tool-call budgets. Keep timestamped provenance; do not reuse a document-answer cache for live comfort readings.',
+  failure:'Stale, missing or poorly calibrated sensors can mislead the answer. Check timestamps, units and quality flags. If tools fail, state what is unknown. Equipment commands remain in a separate operator-controlled workflow.',
+  measure:'Replay resolved comfort tickets. Check whether the assistant identifies relevant evidence, notices stale data and avoids duplicate work orders, within a bounded time and tool budget.',
+ },
+];
+
+export const choices: {id:RagId; signal:string; cost:string; gate:string}[] = [
+ {id:'naive',signal:'“How do I request after-hours cooling?” One current building-handbook passage is enough.',cost:'One search and one grounded answer.',gate:'Keep it when the correct building’s passage is consistently found and cited.'},
+ {id:'hybrid',signal:'“F-17 on AHU-7, with weak airflow.” Exact codes and everyday symptom descriptions both matter.',cost:'Keyword + meaning-based search, then merging their results.',gate:'Check that both exact-code and symptom-only questions find the correct model’s evidence.'},
+ {id:'rerank',signal:'“Which maintenance procedure fits this installed assembly?” The right passage is present but buried.',cost:'A second ranking pass over a limited number of candidates.',gate:'Check that the approved, applicable procedure rises to the top without excessive delay.'},
+ {id:'multi',signal:'“Why is overnight energy high?” Reports use baseload, schedule override and out-of-hours operation.',cost:'Several searches and possibly a model call to create query variants.',gate:'Find more useful evidence than one query without drifting to unrelated causes.'},
+ {id:'graph',signal:'“Which rooms does AHU-7 serve?” You must follow equipment-to-zone-to-room relationships.',cost:'Maintaining verified asset identities and connection data.',gate:'Match engineer-reviewed paths and affected rooms; expose missing or stale connections.'},
+ {id:'agentic',signal:'“Why is Room 301 hot now?” The next lookup depends on live readings and open maintenance work.',cost:'Several authorized tools, variable response time and explicit stop conditions.',gate:'Improve investigation quality over a fixed workflow while respecting time and tool limits.'},
+];

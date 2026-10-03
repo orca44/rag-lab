@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output and generated Next.js types
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Local Vercel project settings and build output
+.vercel/
+
+# Test reports and coverage (keep test source in Git)
+test-results/
+playwright-report/
+playwright/.cache/
+coverage/
+
+# Local environment values; keep a shareable example if one is added
+.env*
+!.env.example
+
+# Logs and local caches
+*.log
+.cache/
+.turbo/
+.npm/
+
+# Machine-specific editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+
+# Local coding-agent instructions (next dev regenerates AGENTS.md)
+/AGENTS.md
+/CLAUDE.md
+.claude/

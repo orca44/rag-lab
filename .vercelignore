@@ -1,0 +1,38 @@
+# Local dependencies, build output and generated files
+node_modules/
+.next/
+out/
+.vercel/
+next-env.d.ts
+*.tsbuildinfo
+
+# Configure deployment environment values in Vercel project settings
+.env*
+
+# Tests and reports are kept in GitHub but are not needed by next build
+tests/
+playwright.config.ts
+test-results/
+playwright-report/
+playwright/.cache/
+coverage/
+
+# Repository documentation, CI and coding-agent instructions
+/README.md
+/AGENTS.md
+/CLAUDE.md
+.claude/
+.github/
+
+# Local logs, caches and editor files
+*.log
+.cache/
+.turbo/
+.npm/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
